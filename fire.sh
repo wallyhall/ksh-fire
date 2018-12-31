@@ -5,6 +5,15 @@ WIDTH=$(tput cols)
 HEIGHT=$(tput lines)
 BOTTOMROW=$((HEIGHT-1))
 
+case $1 in
+    +([1-7]))
+        TEMP=$1
+    ;;
+    *)
+        TEMP=7
+    ;;
+esac
+
 DRAW[0]=" "
 DRAW[1]="\033[38;5;196m."
 DRAW[2]="\033[38;5;202m:"
@@ -17,14 +26,14 @@ DRAW[7]="\033[38;5;15m#"
 trap "reset; exit" INT
 
 echo -e "\033[?25l"
-tput clear
+printf "\033[2J"
 
 # initialise
 j=$((HEIGHT*WIDTH))
 i=$((j-WIDTH))
 while [[ $i -lt $j ]]
 do
-    state[$i]=7
+    state[$i]=$TEMP
     i=$((i+1))
 done
 
@@ -43,27 +52,30 @@ do
 done
 
 # draw the initial bottom line (all hottest)
+
 x=0
+printf "\033[${HEIGHT};0H"
 while [[ $x -lt $WIDTH ]]
 do
-    tput cup $HEIGHT $x
-    printf "${DRAW[7]}"
+    printf "${DRAW[${TEMP}]}"
     x=$((x+1))
 done
 
 # run
 while [[ true ]]
 do
+    lastFrameDrawn=$(date +%s%N)
+    frame=""
     x=0
     while [[ $x -lt $WIDTH ]]
     do
-        y=$((HEIGHT-1))
+        y=$((HEIGHT - 1))
         while [[ $y -ge 1 ]]
         do
             i=$((y * WIDTH + x))
-            
+
             # spread fire to weighted random row above
-            rand=$(((RANDOM * 3) & 3))
+            rand=$(((RANDOM * 5) & 3))
             j=$((i - (WIDTH * rand)))
             # boundary check
             if [[ $j -ge 0 ]]
@@ -71,7 +83,7 @@ do
                 # decay by a weighted random amount
                 randDecay=$((rand & 1))
                 state[j]=$((state[i] - randDecay))
-            
+
                 # boundary check
                 if [[ $state[$j] -lt 0 ]]
                 then
@@ -83,14 +95,30 @@ do
             then
                 if [[ $stateDoubleBuffer[$i] -ne $state[$i] ]]
                 then
-                    tput cup $y $x
-                    printf "${DRAW[state[i]]}"
+                    yAnsiOffset=$((y+1))
+                    xAnsiOffset=$((x+1))
+                    frame="${frame}\033[${yAnsiOffset};${xAnsiOffset}H"
+                    frame="${frame}${DRAW[state[i]]}"
                 fi
             fi
-        
+
             stateDoubleBuffer[$i]=${state[i]}
             y=$((y-1))
         done
+
         x=$((x+1))
     done
+
+    # draw frame line to console
+    printf "$frame"
+
+    thisFrameDrawn=$(date +%s%N)
+    frameDrawTime=$(((thisFrameDrawn - lastFrameDrawn) / 1000000))
+    printf "\033[1;1H\033[38;5;106m${frameDrawTime}ms  "
+    sleepTime=$((100 - frameDrawTime))
+    if [[ $sleepTime -gt 0 ]]
+    then
+        sleepTimeFloat="$(printf "0.%03d" $sleepTime)"
+        sleep "$sleepTimeFloat"
+    fi
 done
